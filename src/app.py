@@ -1,75 +1,78 @@
-import streamlit as st # For building web app
-from llm.gemini_operations import GeminiChat # Custom GeminiChat class for AI responses
-from database.pinecone_operations import PineconeManager # Pinecone manager for storing/retrieving embeddings
+import streamlit as st
+from llm.gemini_operations import GeminiChat
+from database.pinecone_operations import PineconeManager
 from utils.pdf_processor import PDFProcessor
-from utils.chat_memory import ChatMemory # Chat memory for storing chat history
+from utils.chat_memory import ChatMemory
 
-# Initializes Streamlit's session state to persist chatbot-related objects.
 def initialize_session_state():
-    # Initialize chat memory if not already stored in session state
     if 'chat_memory' not in st.session_state:
         st.session_state.chat_memory = ChatMemory()
-    # Initialize Gemini chat model if not already stored
     if 'gemini_chat' not in st.session_state:
         st.session_state.gemini_chat = GeminiChat()
-    # Initialize Pinecone manager for embedding storage/retrieval
     if 'pinecone_manager' not in st.session_state:
         st.session_state.pinecone_manager = PineconeManager()
-# Main function to run the Streamlit chatbot application.
+
 def main():
     st.title("Gemini Chatbot with PDF Knowledge")
-    initialize_session_state() # Ensure all necessary components are initialized
+    initialize_session_state()
 
     # PDF Upload Section
-    st.sidebar.header("Upload PDF") # Sidebar section for file upload
+    st.sidebar.header("Upload PDF")
     pdf_file = st.sidebar.file_uploader("Choose a PDF file", type="pdf")
     
     if pdf_file and st.sidebar.button("Process PDF"):
-        """
-        If the user uploads a PDF and clicks the "Process PDF" button, 
-        extract text, chunk it, and store embeddings in Pinecone.
-        """
-        with st.spinner("Processing PDF..."): # Show a loading spinner
+        with st.spinner("Processing PDF..."):
             # Extract and process PDF
-            pdf_processor = PDFProcessor() # Instantiate the PDF processor
-            text = pdf_processor.extract_text(pdf_file) # Extract text from the uploaded PDF
-            chunks = pdf_processor.create_chunks(text) # Split text into smaller chunks
+            pdf_processor = PDFProcessor()
             
-            # Store extracted chunks as embeddings in Pinecone with metadata
-            st.session_state.pinecone_manager.store_embeddings(
-                chunks, 
-                metadata={"source": pdf_file.name} # Store PDF filename as metadata
-            )
-            st.sidebar.success("PDF processed and stored successfully!")
+            with st.status("Processing document...") as status:
+                status.write("Extracting text from PDF...")
+                text = pdf_processor.extract_text(pdf_file)
+                
+                status.write("Creating text chunks...")
+                chunks = pdf_processor.create_chunks(text)
+                
+                status.write(f"Uploading {len(chunks)} chunks to Pinecone...")
+                progress_bar = st.progress(0)
+                
+                # Store in Pinecone with progress tracking
+                batch_size = 50
+                for i in range(0, len(chunks), batch_size):
+                    batch = chunks[i:i + batch_size]
+                    st.session_state.pinecone_manager.store_embeddings(
+                        batch, 
+                        metadata={"source": pdf_file.name}
+                    )
+                    progress = min((i + batch_size) / len(chunks), 1.0)
+                    progress_bar.progress(progress)
+                
+                status.update(label="PDF processed successfully!", state="complete")
 
     # Chat Interface
-    st.write("Chat History:") # Display chat history section
-    # Loop through and display past messages
+    st.write("Chat History:")
     for message in st.session_state.chat_memory.get_history():
-        with st.chat_message(message["role"]): # Display message as user or assistant
+        with st.chat_message(message["role"]):
             st.write(message["content"])
 
-    user_input = st.chat_input("Type your message here...") # Input box for user messages
+    user_input = st.chat_input("Type your message here...")
     
     if user_input:
+        # Display user message
         with st.chat_message("user"):
             st.write(user_input)
-        # Add user message to chat history
         st.session_state.chat_memory.add_message("user", user_input)
 
-        # Retrieve relevant stored chunks from Pinecone for context
+        # Search for relevant context in Pinecone
         relevant_chunks = st.session_state.pinecone_manager.similarity_search(user_input)
-        context = "\n".join(relevant_chunks) if relevant_chunks else None # Combine retrieved chunks into context
+        context = "\n".join(relevant_chunks) if relevant_chunks else None
 
-        # Get AI-generated response from Gemini model using the retrieved context
+        # Get response from Gemini
         response = st.session_state.gemini_chat.get_response(user_input, context)
 
         # Display assistant response
         with st.chat_message("assistant"):
             st.write(response)
-        # Add AI response to chat history
         st.session_state.chat_memory.add_message("assistant", response)
 
-# Ensure the script runs as the main module
 if __name__ == "__main__":
     main() 
