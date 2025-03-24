@@ -11,5 +11,6 @@ PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT")
 
 # Pinecone Settings
 PINECONE_INDEX_NAME = "chatbot"
-CHUNK_SIZE = 1000
-CHUNK_OVERLAP = 200 
+# AI gets better context when answering questions, especially for long documents.
+CHUNK_SIZE = 1000 # No. of characters in each chunk of text
+CHUNK_OVERLAP = 200 # The next chunk will start from 800-1800 characters to maintain context
