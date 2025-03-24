@@ -52,13 +52,6 @@ def main():
     user_input = st.chat_input("Type your message here...") # Input box for user messages
     
     if user_input:
-        """
-        When the user sends a message:
-        - Display it in the chat
-        - Retrieve relevant information from Pinecone
-        - Get a response from Gemini AI
-        - Display and store the AI response
-        """
         with st.chat_message("user"):
             st.write(user_input)
         # Add user message to chat history
